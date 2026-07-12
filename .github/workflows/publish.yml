@@ -1,0 +1,34 @@
+name: publish
+
+# Publishes @rheopyrin/db-access-mcp to npm when a GitHub Release is published.
+# Create a Release whose tag matches the package.json version (e.g. v0.1.0).
+#
+# Setup required once in the repo:
+#   Settings -> Secrets and variables -> Actions -> new secret NPM_TOKEN
+#   (npm "Automation" access token with publish rights on the package/scope).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org # writes .npmrc that reads NODE_AUTH_TOKEN
+
+      - run: npm ci
+
+      # prepublishOnly runs lint + typecheck + build + test before packing.
+      # access=public comes from package.json publishConfig; --provenance needs id-token.
+      - run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

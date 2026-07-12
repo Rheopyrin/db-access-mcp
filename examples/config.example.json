@@ -1,0 +1,263 @@
+{
+  "vault": {
+    "vault-main": {
+      "address": "https://vault.example.com:8200",
+      "token": "hvs.inline-token-not-recommended"
+    },
+    "vault-dr": {
+      "address": {
+        "env": "VAULT_DR_ADDR"
+      },
+      "token": {
+        "env": "VAULT_DR_TOKEN"
+      }
+    }
+  },
+  "aws_secret_profiles": {
+    "aws-prod": {
+      "aws_profile": "prod",
+      "aws_region": "us-east-1",
+      "reload_interval_ms": 3600000,
+      "sso": {
+        "session": "my-sso-session",
+        "timeout_ms": 300000
+      }
+    },
+    "aws-dev": {
+      "aws_profile": {
+        "env": "AWS_DEV_PROFILE"
+      },
+      "aws_region": {
+        "env": "AWS_DEV_REGION"
+      }
+    }
+  },
+  "env_files": [],
+  "allow_export_paths": [
+    "~/db_exports",
+    "/tmp"
+  ],
+  "pool": {
+    "max": 5,
+    "min": 0,
+    "idle_timeout_ms": 30000,
+    "connection_timeout_ms": 10000
+  },
+  "limits": {
+    "max_rows": 1000,
+    "query_timeout_ms": 30000,
+    "idle_close_ms": 600000
+  },
+  "tunnels": {
+    "bastion-ssm": {
+      "type": "ssm",
+      "options": {
+        "target": "i-0123456789abcdef0",
+        "region": "us-east-1",
+        "profile": "default"
+      },
+      "sso": {
+        "session": "my-sso-session",
+        "profile": "default",
+        "timeout_ms": 300000
+      }
+    },
+    "bastion-ssh": {
+      "type": "ssh",
+      "options": {
+        "host": "bastion.example.com",
+        "port": 22,
+        "username": "ec2-user",
+        "privateKey": "~/.ssh/id_ed25519",
+        "known_hosts": "~/.ssh/known_hosts"
+      }
+    }
+  },
+  "connections": {
+    "pg-plain": {
+      "type": "postgres",
+      "description": "PostgreSQL with inline credentials (not recommended for production)",
+      "read_only": true,
+      "metadata": {
+        "team": "growth",
+        "env": "prod"
+      },
+      "options": {
+        "host": "pg.example.com",
+        "port": 5432,
+        "database": "analytics",
+        "user": "readonly",
+        "password": "inline-password"
+      }
+    },
+    "pg-multi-db": {
+      "type": "postgres",
+      "description": "One server hosting several databases: pass the \"database\" tool parameter to pick one (no implicit default without the \"database\" property)",
+      "read_only": true,
+      "options": {
+        "host": "pg-shared.example.com",
+        "port": 5432,
+        "databases": [
+          "app",
+          "reporting",
+          "audit"
+        ],
+        "user": "readonly",
+        "password": "inline-password"
+      }
+    },
+    "pg-tunneled": {
+      "type": "postgres",
+      "description": "PostgreSQL behind an SSM tunnel, connection string style",
+      "options": {
+        "connectionString": "postgres://user:pass@pg.private.example.com:5432/appdb"
+      },
+      "tunnel": {
+        "target": "bastion-ssm"
+      }
+    },
+    "pg-env-secrets": {
+      "type": "postgres",
+      "description": "Credentials from environment variables (see also env_files)",
+      "options": {
+        "host": "pg.example.com",
+        "port": 5432,
+        "database": "appdb",
+        "user": "${env.userName}",
+        "password": "${env.password}"
+      },
+      "secrets": {
+        "env": {
+          "userName": "PG_APPDB_USER",
+          "password": "PG_APPDB_PASSWORD"
+        }
+      }
+    },
+    "mysql-app": {
+      "type": "mysql",
+      "description": "MySQL; set options.multipleStatements: true to run ;-separated scripts (default off)",
+      "metadata": {
+        "team": "app"
+      },
+      "options": {
+        "host": "mysql.example.com",
+        "port": 3306,
+        "database": "appdb",
+        "user": "${env.user}",
+        "password": "${env.password}",
+        "multipleStatements": false
+      },
+      "secrets": {
+        "env": {
+          "user": "MYSQL_APP_USER",
+          "password": "MYSQL_APP_PASSWORD"
+        }
+      }
+    },
+    "redshift-dwh": {
+      "type": "redshift",
+      "description": "Redshift over an SSH tunnel with dynamic credentials from a named Vault",
+      "read_only": true,
+      "metadata": {
+        "team": "data"
+      },
+      "options": {
+        "host": "cluster.abc123.us-east-1.redshift.amazonaws.com",
+        "port": 5439,
+        "database": "dwh",
+        "user": "${vault.username}",
+        "password": "${vault.password}"
+      },
+      "tunnel": {
+        "target": "bastion-ssh",
+        "localPort": 25439
+      },
+      "secrets": {
+        "vault": {
+          "target": "vault-main",
+          "path": "database/creds/redshift-readonly"
+        }
+      }
+    },
+    "pg-iam-auth": {
+      "type": "postgres",
+      "description": "Passwordless RDS access: 15-minute IAM auth tokens, auto-refreshed (requires SSL + rds_iam grant)",
+      "read_only": true,
+      "options": {
+        "host": "pg-iam.abc.us-east-1.rds.amazonaws.com",
+        "port": 5432,
+        "database": "appdb",
+        "user": "${aws_iam.username}",
+        "password": "${aws_iam.token}",
+        "ssl": {
+          "rejectUnauthorized": false
+        }
+      },
+      "secrets": {
+        "aws_iam": {
+          "username": "readonly",
+          "target": "aws-prod"
+        }
+      }
+    },
+    "redshift-iam-auth": {
+      "type": "redshift",
+      "description": "Temporary Redshift credentials via GetClusterCredentials (username arrives with the IAM: prefix)",
+      "read_only": true,
+      "options": {
+        "host": "cluster.abc123.us-east-1.redshift.amazonaws.com",
+        "port": 5439,
+        "database": "dwh",
+        "user": "${aws_redshift_creds.username}",
+        "password": "${aws_redshift_creds.password}"
+      },
+      "secrets": {
+        "aws_redshift_creds": {
+          "cluster_id": "my-cluster",
+          "db_user": "readonly",
+          "target": "aws-prod"
+        }
+      }
+    },
+    "pg-default-vault": {
+      "type": "postgres",
+      "description": "Vault without \"target\": uses the default client from VAULT_ADDR/VAULT_TOKEN env vars",
+      "options": {
+        "host": "pg2.example.com",
+        "port": 5432,
+        "database": "appdb",
+        "user": "${vault.username}",
+        "password": "${vault.password}"
+      },
+      "secrets": {
+        "vault": {
+          "path": "secret/data/databases/appdb"
+        }
+      }
+    },
+    "mssql-erp": {
+      "type": "mssql",
+      "description": "SQL Server with credentials from AWS Secrets Manager via a named profile",
+      "metadata": {
+        "team": "erp"
+      },
+      "options": {
+        "host": "mssql.example.com",
+        "port": 1433,
+        "database": "erp",
+        "user": "${aws.username}",
+        "password": "${aws.password}",
+        "options": {
+          "encrypt": true,
+          "trustServerCertificate": false
+        }
+      },
+      "secrets": {
+        "aws": {
+          "secret_id": "prod/erp/mssql",
+          "target": "aws-prod"
+        }
+      }
+    }
+  }
+}
