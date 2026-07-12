@@ -1,14 +1,18 @@
 name: publish
 
-# Publishes @rheopyrin/db-access-mcp to npm when a GitHub Release is published.
-# Create a Release whose tag matches the package.json version (e.g. v0.1.0).
+# Publishes @rheopyrin/db-access-mcp to npm on every push to master
+# (direct commits and PR merges are both pushes to master), plus a manual
+# "Run workflow" button. It only actually publishes when the package.json
+# version is NOT already on npm — so bump the version to cut a release; pushes
+# without a bump run but skip publishing (npm forbids re-publishing a version).
 #
 # Setup required once in the repo:
 #   Settings -> Secrets and variables -> Actions -> new secret NPM_TOKEN
-#   (npm "Automation" access token with publish rights on the package/scope).
+#   (npm "Automation" access token with publish rights on the scope).
 on:
-  release:
-    types: [published]
+  push:
+    branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,8 +31,23 @@ jobs:
 
       - run: npm ci
 
+      # Publish only when this exact version is not on npm yet — avoids failing
+      # on pushes/merges that don't bump package.json version.
+      - id: check
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION already published — skipping"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$NAME@$VERSION not published yet — will publish"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # prepublishOnly runs lint + typecheck + build + test before packing.
       # access=public comes from package.json publishConfig; --provenance needs id-token.
-      - run: npm publish --provenance
+      - if: steps.check.outputs.publish == 'true'
+        run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
