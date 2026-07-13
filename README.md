@@ -5,6 +5,8 @@
 [![license: MIT](https://img.shields.io/npm/l/@rheopyrin/db-access-mcp)](LICENSE)
 [![node](https://img.shields.io/node/v/@rheopyrin/db-access-mcp)](package.json)
 
+[![db-access-mcp MCP server](https://glama.ai/mcp/servers/Rheopyrin/db-access-mcp/badges/card.svg)](https://glama.ai/mcp/servers/Rheopyrin/db-access-mcp)
+
 MCP (Model Context Protocol) stdio server that gives AI agents (Claude Code, Claude
 Desktop, any MCP client) access to configured databases:
 
