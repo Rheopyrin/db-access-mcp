@@ -1,7 +1,7 @@
 {
   "name": "@rheopyrin/db-access-mcp",
-  "version": "0.1.0",
-  "description": "MCP stdio server providing access to configured databases (postgres, mysql, redshift) with SSH/SSM tunnels and pluggable secret providers",
+  "version": "0.1.1",
+  "description": "MCP stdio server that gives AI agents access to Postgres, MySQL, Redshift and SQL Server — with SSH/AWS SSM tunnels and pluggable secret providers (env, Vault, AWS Secrets Manager, RDS IAM).",
   "license": "MIT",
   "author": "Rheopyrin",
   "type": "module",
@@ -29,13 +29,22 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
+    "claude",
+    "claude-code",
+    "ai-agents",
     "database",
     "postgres",
     "mysql",
     "redshift",
+    "sql-server",
+    "mssql",
     "ssh-tunnel",
-    "ssm",
-    "vault"
+    "aws-ssm",
+    "hashicorp-vault",
+    "aws-secrets-manager",
+    "rds-iam",
+    "typescript",
+    "cli"
   ],
   "scripts": {
     "build": "tsup",
