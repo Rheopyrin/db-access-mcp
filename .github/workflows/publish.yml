@@ -6,6 +6,9 @@ name: publish
 # version is NOT already on npm — so bump the version to cut a release; pushes
 # without a bump run but skip publishing (npm forbids re-publishing a version).
 #
+# On a version bump it publishes to npm AND registers the server in the official
+# MCP Registry (github-oidc auth — no extra secret; uses the workflow OIDC token).
+#
 # Setup required once in the repo:
 #   Settings -> Secrets and variables -> Actions -> new secret NPM_TOKEN
 #   (npm "Automation" access token with publish rights on the scope).
@@ -55,3 +58,27 @@ jobs:
         run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # --- Official MCP Registry (only when a new npm version was just published) ---
+      # The registry validates that the published npm package carries a matching
+      # top-level "mcpName", so this must run AFTER npm publish.
+      - name: Install mcp-publisher
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" \
+            | tar -xz mcp-publisher
+          sudo install -m 0755 mcp-publisher /usr/local/bin/mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.0
+
+      # Keep server.json in sync with package.json so the two versions can't drift.
+      - name: Stamp server.json version from package.json
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          node -e "const fs=require('fs');const v=require('./package.json').version;const s=require('./server.json');s.version=v;s.packages[0].version=v;fs.writeFileSync('server.json',JSON.stringify(s,null,2)+'\n')"
+
+      - name: Publish to MCP Registry
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          mcp-publisher login github-oidc
+          mcp-publisher publish

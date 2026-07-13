@@ -1,5 +1,10 @@
 # db-access-mcp
 
+[![npm](https://img.shields.io/npm/v/@rheopyrin/db-access-mcp?logo=npm)](https://www.npmjs.com/package/@rheopyrin/db-access-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@rheopyrin/db-access-mcp)](https://www.npmjs.com/package/@rheopyrin/db-access-mcp)
+[![license: MIT](https://img.shields.io/npm/l/@rheopyrin/db-access-mcp)](LICENSE)
+[![node](https://img.shields.io/node/v/@rheopyrin/db-access-mcp)](package.json)
+
 MCP (Model Context Protocol) stdio server that gives AI agents (Claude Code, Claude
 Desktop, any MCP client) access to configured databases:
 
@@ -12,6 +17,32 @@ with **SSH / AWS SSM tunnels**, pluggable **secret providers** (env vars, HashiC
 Vault, AWS Secrets Manager) and strict **per-instance isolation** — many MCP
 instances can run concurrently on one machine without sharing connections or
 tunnels, and crashed instances never leave orphaned tunnel processes behind.
+
+## Highlights
+
+**Tools:** `connection_list` / `connection_find` / `connection_test`, `query`,
+`query_plan` (EXPLAIN), `query_to_file` (streamed CSV/JSONL export that bypasses the
+model context), `up_tunnel` / `down_tunnel` / `tunnel_list`.
+
+**Security-first design:**
+
+- **Verified SSH tunnels** — the bastion host key is checked against a
+  `host_key_sha256` pin or `known_hosts`, failing closed on mismatch (MITM defence),
+  not blindly trusted.
+- **`read_only` seatbelt** + single-statement-by-default, which also closes the
+  `SET session read-only off; INSERT …` bypass.
+- **Confined file exports** — `query_to_file` writes only under the export dir or an
+  `allow_export_paths` root; it cannot clobber `~/.ssh`, dotfiles or the config dir.
+- **No secrets leak out** — tools never return stacks or credentials; logs redact by
+  key name *and* scrub inline `user:password@host` URIs.
+- **Pluggable secret providers** — env vars, HashiCorp Vault (dynamic leases with
+  auto-refresh and atomic pool swaps), AWS Secrets Manager, RDS IAM auth tokens and
+  temporary Redshift credentials.
+
+**Tunnels & crash-safety:** in-process SSH (dies with the process — no orphaned
+ports) and AWS SSM under a watchdog (killed even on SIGKILL), with AWS SSO bootstrap.
+Every instance's pools and tunnels are isolated; a crashed instance's tunnels are
+reaped by the next start.
 
 ## Quick start
 
