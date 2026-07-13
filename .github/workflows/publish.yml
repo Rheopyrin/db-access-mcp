@@ -22,14 +22,18 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org # writes .npmrc that reads NODE_AUTH_TOKEN
 
       - run: npm ci
+
+      # Build up front so dist/cli.js exists when npm normalizes the bin field
+      # (otherwise npm warns "No bin file found"). prepublishOnly rebuilds anyway.
+      - run: npm run build
 
       # Publish only when this exact version is not on npm yet — avoids failing
       # on pushes/merges that don't bump package.json version.
