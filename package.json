@@ -1,6 +1,6 @@
 {
   "name": "@rheopyrin/db-access-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP stdio server that gives AI agents access to Postgres, MySQL, Redshift and SQL Server — with SSH/AWS SSM tunnels and pluggable secret providers (env, Vault, AWS Secrets Manager, RDS IAM).",
   "license": "MIT",
   "author": "Rheopyrin",

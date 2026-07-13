@@ -40,7 +40,7 @@ async function main(): Promise<void> {
         '                     [--config <file>] [--env-file <file>]... [--log-level <debug|info|warn|error|silent>]',
         '',
         'Defaults: workdir ~/.db_acess_mcp (config.json + conf.d/*.json, instances/, sso/);',
-        '          exportdir ~/db_access_mcp/exports (where query_to_file writes exports).',
+        '          exportdir /tmp/db-access-mcp/exports (where query_to_file writes exports; made on demand).',
         'With --config <file> only that file is loaded (no conf.d scan).',
         '--env-file may be repeated; files are applied after the config env_files list.',
         'Environment: DB_ACCESS_MCP_WORKDIR, DB_ACCESS_MCP_EXPORTDIR, DB_ACCESS_MCP_CONFIG, DB_ACCESS_MCP_LOG_LEVEL.',

@@ -30,8 +30,9 @@ tunnels, and crashed instances never leave orphaned tunnel processes behind.
 On first start the server creates the working directory `~/.db_acess_mcp`
 (intentional spelling — it is the product contract) with an empty `config.json`, an
 empty `conf.d/` directory and a full `config.example.json` covering every dialect,
-secret provider and tunnel type, plus the export directory `~/db_access_mcp/exports`
-for `query_to_file` output. Edit `~/.db_acess_mcp/config.json`, restart the MCP
+secret provider and tunnel type. The export directory (default
+`/tmp/db-access-mcp/exports`) is **not** created up front — `query_to_file` makes it
+on demand on the first export. Edit `~/.db_acess_mcp/config.json`, restart the MCP
 server, done.
 
 ## Integrating the MCP
@@ -119,15 +120,15 @@ db-access-mcp [workdir] [exportdir] [--workdir <dir>] [--exportdir <dir>] [--con
 | Option | Env var | Default |
 |---|---|---|
 | `--workdir` (or first positional) | `DB_ACCESS_MCP_WORKDIR` | `~/.db_acess_mcp` |
-| `--exportdir` (or second positional) | `DB_ACCESS_MCP_EXPORTDIR` | `~/db_access_mcp/exports` |
+| `--exportdir` (or second positional) | `DB_ACCESS_MCP_EXPORTDIR` | `/tmp/db-access-mcp/exports` |
 | `--config` | `DB_ACCESS_MCP_CONFIG` | discovery: `<workdir>/config.json` + `<workdir>/conf.d/*.json` |
 | `--env-file` (repeatable) | — | none |
 | `--log-level` (`debug`\|`info`\|`warn`\|`error`\|`silent`) | `DB_ACCESS_MCP_LOG_LEVEL` | `info` |
 
 The **workdir** holds `config.json`, `conf.d/`, `config.example.json` and the
 runtime `instances/` and `sso/` state (unchanged from earlier releases). The
-**exportdir** is where `query_to_file` writes exports; `allow_export_paths` adds
-extra writable roots.
+**exportdir** is where `query_to_file` writes exports (created on demand, not at
+startup); `allow_export_paths` adds extra writable roots.
 
 All logs are JSON lines on **stderr** (stdout belongs to the MCP protocol). Values
 of keys matching `password`, `token`, `secret`, `privateKey` etc. are redacted.
@@ -141,14 +142,14 @@ of keys matching `password`, `token`, `secret`, `privateKey` etc. are redacted.
 | `connection_find` | Finds connections by `host`, `port`, `database`, `type`, `read_only` and/or `metadata` key-value pairs. All filters are combined with **AND**. `user`/`password` filters are ignored (and noted in the response). |
 | `connection_test` | End-to-end health check: secrets → tunnel → pool → one-row server-info query. Returns `ok: true` with server version/user/database/latency, or `ok: false` with the failure code and hint (an unreachable DB is a valid result, not a tool error). |
 | `query` | Executes SQL on a connection. Accepts `connection`, `query`, optional `database` (see multi-database connections), `max_rows` and `timeout_ms` overrides. Results are truncated to the row cap with `truncated: true`. |
-| `query_to_file` | Executes a query and writes the result to a file (`csv`/`jsonl`, inferred from the extension) instead of the model context. `file_path` is relative to the export dir (default `~/db_access_mcp/exports`), or an absolute/`~` path **under** the export dir or a configured `allow_export_paths` root — writes outside are rejected. Existing files require `overwrite: true`. postgres/mysql **stream** rows (no cap by default); redshift/mssql buffer and are capped at 100k rows. |
+| `query_to_file` | Executes a query and writes the result to a file (`csv`/`jsonl`, inferred from the extension) instead of the model context. `file_path` is relative to the export dir (default `/tmp/db-access-mcp/exports`, created on demand), or an absolute/`~` path **under** the export dir or a configured `allow_export_paths` root — writes outside are rejected. Existing files require `overwrite: true`. postgres/mysql **stream** rows (no cap by default); redshift/mssql buffer and are capped at 100k rows. |
 | `query_plan` | Returns the execution plan without running the query: `EXPLAIN (FORMAT JSON)` for postgres, `EXPLAIN FORMAT=JSON` for mysql, text `EXPLAIN` for redshift, `SHOWPLAN_XML` for mssql. |
 | `up_tunnel` | Opens (or reuses) the tunnel configured for a connection and returns `{host, port, tunnel_id, reused}`. Optional `local_port` binds an exact local port; if the tunnel is already open on a different port or the port is taken, the call fails with the current port in the error. |
 | `down_tunnel` | Closes a tunnel by `tunnel_id`. By default only the up_tunnel pin is released — if query pools still hold the tunnel it stays open (`remaining_holders`); `force: true` drains the holder pools and closes it unconditionally. |
 | `tunnel_list` | Lists the tunnels currently open in this MCP instance with a live health probe: `tunnel_id`, tunnel name/type, local and remote endpoints, `healthy`, holder pools (`connections`), up_tunnel `pins`, external PIDs. |
 
 Security note for `query_to_file`: writes are confined to the export dir (default
-`~/db_access_mcp/exports`) plus any roots listed in `allow_export_paths` (e.g.
+`/tmp/db-access-mcp/exports`) plus any roots listed in `allow_export_paths` (e.g.
 `["/tmp", "~/data_files"]`) — every subpath below a listed root is allowed, anything
 else is rejected, so the tool cannot clobber `~/.ssh`, dotfiles or the workdir. It
 only ever creates files (no reads, no appends) and refuses to overwrite without an

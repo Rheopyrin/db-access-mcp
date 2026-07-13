@@ -5,8 +5,8 @@ import path from 'node:path';
 /** Intentional spelling: the workdir product contract is `~/.db_acess_mcp`. */
 export const DEFAULT_WORKDIR_NAME = '.db_acess_mcp';
 export const CONFIG_FILE_NAME = 'config.json';
-/** Default export directory (correct spelling): `~/db_access_mcp/exports`. */
-export const DEFAULT_EXPORT_DIR_SEGMENTS = ['db_access_mcp', 'exports'] as const;
+/** Default export directory. Not created at startup — made on demand per export. */
+export const DEFAULT_EXPORT_DIR = '/tmp/db-access-mcp/exports';
 
 /** Shells do not expand `~` on Windows, and never inside quoted args — do it ourselves. */
 export function expandTilde(p: string): string {
@@ -32,7 +32,7 @@ export function resolveExportDir(cliValue?: string): string {
   if (raw && raw.trim() !== '') {
     return path.resolve(expandTilde(raw.trim()));
   }
-  return path.join(os.homedir(), ...DEFAULT_EXPORT_DIR_SEGMENTS);
+  return DEFAULT_EXPORT_DIR;
 }
 
 export function ensureDir(dir: string): void {

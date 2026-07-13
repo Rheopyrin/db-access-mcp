@@ -37,8 +37,8 @@ describe('resolveWorkdir', () => {
 });
 
 describe('resolveExportDir', () => {
-  it('defaults to ~/db_access_mcp/exports', () => {
-    expect(resolveExportDir()).toBe(path.join(os.homedir(), 'db_access_mcp', 'exports'));
+  it('defaults to /tmp/db-access-mcp/exports', () => {
+    expect(resolveExportDir()).toBe('/tmp/db-access-mcp/exports');
   });
 
   it('prefers the CLI value over the env var', () => {

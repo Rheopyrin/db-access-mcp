@@ -53,7 +53,7 @@ export class QueryToFileTool implements McpTool {
   readonly description =
     'Execute a SQL query and write the full result to a file (csv or jsonl) instead of returning rows — ' +
     'use this for large exports that must not go through the model context. Relative file_path resolves ' +
-    'under the export dir (default ~/db_access_mcp/exports); absolute or ~-prefixed paths must fall under ' +
+    'under the export dir (default /tmp/db-access-mcp/exports); absolute or ~-prefixed paths must fall under ' +
     'the export dir or a configured allow_export_paths root. Parent directories are created. Existing files ' +
     'are not overwritten unless overwrite=true. postgres/mysql stream rows (no row limit by default); ' +
     `redshift/mssql buffer in memory and are capped at ${BUFFERED_EXPORT_MAX_ROWS} rows.`;
@@ -105,6 +105,8 @@ export class QueryToFileTool implements McpTool {
           hint: 'Pass overwrite=true to replace it, or choose another file_path.',
         });
       }
+      // Create the export dir (and any parents) on demand — recursive mkdir is a
+      // no-op if it already exists, so nothing is pre-created at startup.
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
       const started = Date.now();

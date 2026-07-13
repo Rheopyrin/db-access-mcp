@@ -5,7 +5,6 @@ import { TYPES } from '../composition/types';
 import type { ConfigService } from '../config/config.service';
 import { InstanceRegistry } from '../instances/instance-registry';
 import { sweepDeadInstances } from '../instances/sweep';
-import { ensureDir } from '../config/paths';
 import type { Logger } from '../interfaces/logger';
 import type { McpTool } from '../interfaces/mcp-tool';
 import type { QueryExecutor } from '../pools/execute';
@@ -36,8 +35,7 @@ export async function startServer(options: BootstrapOptions): Promise<void> {
     dialects.get(configService.getConnection(key).type);
   }
 
-  // The default export directory is created up front.
-  ensureDir(exportDir);
+  // The export directory is NOT created here — query_to_file makes it on demand.
 
   // Clean up tunnels orphaned by crashed instances, then register ourselves.
   await sweepDeadInstances(workdir, logger).catch((err: unknown) => {
