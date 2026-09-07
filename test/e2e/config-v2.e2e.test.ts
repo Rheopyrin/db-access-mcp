@@ -72,3 +72,50 @@ describe('config v2 e2e: conf.d merge and env files', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('config_reload e2e', () => {
+  let instance: E2eInstance;
+
+  beforeAll(async () => {
+    instance = await startInstance({ connections: { first: conn('first.example.com') } });
+  });
+
+  afterAll(async () => {
+    await instance?.close();
+  });
+
+  it('a connection added to the file becomes usable without a restart', async () => {
+    fs.writeFileSync(
+      path.join(instance.workdir, 'config.json'),
+      JSON.stringify({ connections: { first: conn('first.example.com'), second: conn('second.example.com') } }),
+    );
+
+    const reload = await instance.client.callTool({ name: 'config_reload', arguments: {} });
+    expect(reload.isError).toBeFalsy();
+    const structured = reload.structuredContent as {
+      reloaded: boolean;
+      connections: { added: string[]; unchanged: number };
+      warnings: string[];
+    };
+    expect(structured.reloaded).toBe(true);
+    expect(structured.connections.added).toEqual(['second']);
+    expect(structured.warnings).toEqual([]);
+
+    const list = await instance.client.callTool({ name: 'connection_list', arguments: {} });
+    const keys = (list.structuredContent as { connections: { key: string }[] }).connections.map((c) => c.key).sort();
+    expect(keys).toEqual(['first', 'second']);
+  });
+
+  it('an invalid config is rejected and the previous one stays active', async () => {
+    fs.writeFileSync(path.join(instance.workdir, 'config.json'), '{ broken');
+
+    const reload = await instance.client.callTool({ name: 'config_reload', arguments: {} });
+    expect(reload.isError).toBe(true);
+    expect((reload.structuredContent as { code: string }).code).toBe('CONFIG_INVALID');
+
+    // The server is alive and still serving the last good configuration.
+    const list = await instance.client.callTool({ name: 'connection_list', arguments: {} });
+    const keys = (list.structuredContent as { connections: { key: string }[] }).connections.map((c) => c.key).sort();
+    expect(keys).toEqual(['first', 'second']);
+  });
+});

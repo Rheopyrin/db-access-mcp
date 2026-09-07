@@ -62,11 +62,20 @@ export class SecretsManager extends EventEmitter {
     return entry.stale || Date.now() >= entry.expiresAt;
   }
 
-  /** Drops the cache and re-resolves — used by the reconnect/retry path. */
-  async forceResolve(connectionKey: string): Promise<RenderedConnectionOptions> {
+  /**
+   * Drops the cached secret (and its refresh timer) without resolving a new
+   * one — the next getRenderedOptions() resolves lazily. Used when a
+   * connection's definition changed or disappeared (config_reload).
+   */
+  invalidate(connectionKey: string): void {
     const entry = this.cache.get(connectionKey);
     if (entry?.timer) clearTimeout(entry.timer);
     this.cache.delete(connectionKey);
+  }
+
+  /** Drops the cache and re-resolves — used by the reconnect/retry path. */
+  async forceResolve(connectionKey: string): Promise<RenderedConnectionOptions> {
+    this.invalidate(connectionKey);
     return this.getRenderedOptions(connectionKey);
   }
 

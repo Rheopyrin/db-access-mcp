@@ -130,8 +130,52 @@ export function parseConfig(raw: unknown): Config {
   return result.data;
 }
 
+/**
+ * Where the active configuration came from — the inputs config_reload needs to
+ * re-run the very same load. Absent when a ConfigService is built from an
+ * in-memory config (tests): reloading is then not possible.
+ */
+export interface ConfigSource {
+  /** Workdir scanned for config.json + conf.d/*.json when no explicit path is set. */
+  workdir: string;
+  /** --config <file>: when set, the only file that is read. */
+  explicitConfigPath?: string;
+  /** --env-file <file> arguments, applied after the config's own env_files. */
+  envFileArgs: string[];
+  /** Absolute paths that contributed to the active config, in load order. */
+  files: string[];
+}
+
 export class ConfigService {
-  constructor(private readonly config: Config) {}
+  constructor(
+    private config: Config,
+    private source?: ConfigSource,
+  ) {}
+
+  /** Load inputs + contributing files of the active config; undefined for in-memory configs. */
+  get configSource(): ConfigSource | undefined {
+    return this.source;
+  }
+
+  /**
+   * The whole active configuration — for callers that must compare two configs
+   * (config_reload). Config objects are never mutated in place; replace() swaps
+   * a new one in, so a captured reference stays a stable snapshot.
+   */
+  get snapshot(): Config {
+    return this.config;
+  }
+
+  /**
+   * Atomically swaps the active configuration (config_reload). The config MUST
+   * already be parsed and semantically validated — every consumer holds this
+   * one service instance and reads through it on each call, so the swap is
+   * visible everywhere from the next read on.
+   */
+  replace(config: Config, files: string[]): void {
+    this.config = config;
+    if (this.source) this.source = { ...this.source, files };
+  }
 
   /** Named Vault servers; the implicit env-based default is NOT in this map. */
   get vaultConfigs(): Record<string, VaultSettings> {

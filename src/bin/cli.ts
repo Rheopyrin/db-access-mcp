@@ -60,10 +60,17 @@ async function main(): Promise<void> {
 
   seedWorkdir(workdir, explicitConfigPath, logger);
   const { config, files } = loadMergedConfig(workdir, explicitConfigPath);
-  const configService = new ConfigService(config);
+  const envFileArgs = values['env-file'] ?? [];
+  // The source is what config_reload replays to re-run this very same load.
+  const configService = new ConfigService(config, {
+    workdir,
+    ...(explicitConfigPath !== undefined ? { explicitConfigPath } : {}),
+    envFileArgs,
+    files,
+  });
   // Config env_files first, then CLI --env-file: later files take precedence
   // among themselves; the real environment always wins over any file.
-  applyEnvFiles([...configService.envFiles, ...(values['env-file'] ?? [])], logger);
+  applyEnvFiles([...configService.envFiles, ...envFileArgs], logger);
   logger.info('configuration loaded', {
     workdir,
     exportDir,

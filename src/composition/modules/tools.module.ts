@@ -3,6 +3,7 @@ import type { ConfigService } from '../../config/config.service';
 import type { Logger } from '../../interfaces/logger';
 import type { QueryExecutor } from '../../pools/execute';
 import type { PoolManager } from '../../pools/pool-manager';
+import { ConfigReloadTool } from '../../server/tools/config-reload.tool';
 import { ConnectionFindTool } from '../../server/tools/connection-find.tool';
 import { ConnectionListTool } from '../../server/tools/connection-list.tool';
 import { ConnectionTestTool } from '../../server/tools/connection-test.tool';
@@ -122,6 +123,20 @@ export function toolsModule(): ContainerModule {
     bind(TYPES.McpTool)
       .toDynamicValue(
         (ctx) => new TunnelListTool(ctx.get<TunnelManager>(TYPES.TunnelManager), ctx.get<Logger>(TYPES.Logger)),
+      )
+      .inSingletonScope();
+
+    bind(TYPES.McpTool)
+      .toDynamicValue(
+        (ctx) =>
+          new ConfigReloadTool(
+            ctx.get<ConfigService>(TYPES.ConfigService),
+            ctx.get<DialectRegistry>(TYPES.DialectRegistry),
+            ctx.get<PoolManager>(TYPES.PoolManager),
+            ctx.get<SecretsManager>(TYPES.SecretsManager),
+            ctx.get<TunnelManager>(TYPES.TunnelManager),
+            ctx.get<Logger>(TYPES.Logger),
+          ),
       )
       .inSingletonScope();
   });

@@ -24,7 +24,8 @@ tunnels, and crashed instances never leave orphaned tunnel processes behind.
 
 **Tools:** `connection_list` / `connection_find` / `connection_test`, `query`,
 `query_plan` (EXPLAIN), `query_to_file` (streamed CSV/JSONL export that bypasses the
-model context), `up_tunnel` / `down_tunnel` / `tunnel_list`.
+model context), `up_tunnel` / `down_tunnel` / `tunnel_list`, `config_reload`
+(pick up new connections/tunnels without a restart).
 
 **Security-first design:**
 
@@ -180,6 +181,29 @@ of keys matching `password`, `token`, `secret`, `privateKey` etc. are redacted.
 | `up_tunnel` | Opens (or reuses) the tunnel configured for a connection and returns `{host, port, tunnel_id, reused}`. Optional `local_port` binds an exact local port; if the tunnel is already open on a different port or the port is taken, the call fails with the current port in the error. |
 | `down_tunnel` | Closes a tunnel by `tunnel_id`. By default only the up_tunnel pin is released — if query pools still hold the tunnel it stays open (`remaining_holders`); `force: true` drains the holder pools and closes it unconditionally. |
 | `tunnel_list` | Lists the tunnels currently open in this MCP instance with a live health probe: `tunnel_id`, tunnel name/type, local and remote endpoints, `healthy`, holder pools (`connections`), up_tunnel `pins`, external PIDs. |
+| `config_reload` | Re-reads the config files into the running server so connections/tunnels added or edited on disk become usable without a restart. **Never disturbs live state** — see below. |
+
+### `config_reload`
+
+Edit `config.json` / `conf.d/*.json` (or the `--config` file), call `config_reload`,
+and the next `connection_list`, `query`, `up_tunnel`, … sees the new definitions.
+The files are re-read, re-validated (schema + semantics + dialect check) and the
+config env_files are re-applied before anything is swapped in — **an invalid config
+changes nothing**: the server keeps running on the previous configuration and the
+tool returns the validation error.
+
+The reload is deliberately **non-disruptive**: open pools and running tunnels are
+never closed, drained, recreated or reconfigured, even when their definition
+changed or was removed from the file. They keep the definition they were created
+with until they are closed the normal way (idle timeout, `down_tunnel`, server
+exit); the next pool/tunnel created after that uses the new definition. Every such
+case is listed in the response's `warnings`.
+
+Response: `files` (what was read), `connections` and `tunnels` as
+`{added, removed, changed, unchanged}`, the `pool_defaults_changed` /
+`limits_changed` / `env_files_changed` flags, and `warnings`. Per-call and
+per-connection `limits` are read at call time, so they take effect immediately;
+`pool` settings only apply to pools created after the reload.
 
 Security note for `query_to_file`: writes are confined to the export dir (default
 `/tmp/db-access-mcp/exports`) plus any roots listed in `allow_export_paths` (e.g.

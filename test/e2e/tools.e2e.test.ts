@@ -50,6 +50,7 @@ describe('MCP tools over stdio', () => {
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       expect.arrayContaining([
+        'config_reload',
         'connection_list',
         'connection_find',
         'connection_test',

@@ -158,6 +158,22 @@ export class TunnelManager implements ConnectionTunnels {
     );
   }
 
+  /**
+   * Open tunnels without any health probe — a passive read of the live state,
+   * used by config_reload to report which tunnels keep their previous
+   * definition. Never touches the tunnels themselves.
+   */
+  liveTunnels(): { id: string; tunnelName: string; connections: string[] }[] {
+    return [...this.active.values()].map((entry) => ({
+      id: entry.id,
+      tunnelName: entry.tunnelName,
+      // A connection holding the tunnel by pool AND by pin is listed once.
+      connections: [
+        ...new Set([...entry.refs].map((ref) => (ref.startsWith(PIN_PREFIX) ? ref.slice(PIN_PREFIX.length) : ref))),
+      ],
+    }));
+  }
+
   findById(tunnelId: string): { id: string; tunnelName: string; localPort: number } | undefined {
     const entry = this.byId(tunnelId);
     return entry ? { id: entry.id, tunnelName: entry.tunnelName, localPort: entry.handle.localPort } : undefined;
