@@ -9,9 +9,10 @@ name: publish
 # On a version bump it publishes to npm AND registers the server in the official
 # MCP Registry (github-oidc auth — no extra secret; uses the workflow OIDC token).
 #
-# Setup required once in the repo:
-#   Settings -> Secrets and variables -> Actions -> new secret NPM_TOKEN
-#   (npm "Automation" access token with publish rights on the scope).
+# npm auth is Trusted Publishing (OIDC): no npm token is stored in the repo.
+# Setup required once on npmjs.com:
+#   package @rheopyrin/db-access-mcp -> Settings -> Trusted Publisher ->
+#   GitHub Actions, repository Rheopyrin/db-access-mcp, workflow publish.yml.
 on:
   push:
     branches: [master]
@@ -19,7 +20,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # required for npm provenance (OIDC)
+  id-token: write # npm Trusted Publishing + provenance, MCP Registry login (OIDC)
 
 jobs:
   publish:
@@ -31,6 +32,9 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org # writes .npmrc that reads NODE_AUTH_TOKEN
+
+      # Trusted Publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+      - run: npm install -g npm@^11.5.1
 
       - run: npm ci
 
@@ -53,11 +57,10 @@ jobs:
           fi
 
       # prepublishOnly runs lint + typecheck + build + test before packing.
-      # access=public comes from package.json publishConfig; --provenance needs id-token.
+      # access=public comes from package.json publishConfig. Auth is the OIDC
+      # Trusted Publisher (no token); provenance is attached automatically.
       - if: steps.check.outputs.publish == 'true'
         run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # --- Official MCP Registry (only when a new npm version was just published) ---
       # The registry validates that the published npm package carries a matching
