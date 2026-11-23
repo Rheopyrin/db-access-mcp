@@ -8,6 +8,8 @@ name: publish
 #
 # On a version bump it publishes to npm AND registers the server in the official
 # MCP Registry (github-oidc auth — no extra secret; uses the workflow OIDC token).
+# Each target is checked on its own, so a version missing from either one is
+# published by the next run.
 #
 # npm auth: Trusted Publishing (OIDC) when configured on npmjs.com
 #   (package -> Settings -> Trusted Publisher -> GitHub Actions,
@@ -43,33 +45,63 @@ jobs:
       # (otherwise npm warns "No bin file found"). prepublishOnly rebuilds anyway.
       - run: npm run build
 
-      # Publish only when this exact version is not on npm yet — avoids failing
-      # on pushes/merges that don't bump package.json version.
+      # npm and the MCP Registry are checked separately: a run whose npm publish
+      # succeeded but whose registry step failed can be repaired by a rerun or
+      # any later push, without a version bump.
       - id: check
         run: |
           NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
-          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
-            echo "$NAME@$VERSION already published — skipping"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+          MCP_NAME=$(node -p "require('./package.json').mcpName")
+          if npm view "$NAME@$VERSION" version --prefer-online >/dev/null 2>&1; then
+            echo "npm: $NAME@$VERSION already published — skipping"
+            echo "npm=false" >> "$GITHUB_OUTPUT"
           else
-            echo "$NAME@$VERSION not published yet — will publish"
-            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "npm: $NAME@$VERSION not published yet — will publish"
+            echo "npm=true" >> "$GITHUB_OUTPUT"
           fi
+          ENCODED=$(node -p "encodeURIComponent(process.argv[1])" "$MCP_NAME")
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.modelcontextprotocol.io/v0/servers/$ENCODED/versions/$VERSION")
+          if [ "$STATUS" = "200" ]; then
+            echo "MCP Registry: $MCP_NAME@$VERSION already registered — skipping"
+            echo "mcp=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "MCP Registry: $MCP_NAME@$VERSION not registered (HTTP $STATUS) — will register"
+            echo "mcp=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # prepublishOnly runs lint + typecheck + build + test before packing.
       # access=public comes from package.json publishConfig. npm tries the OIDC
       # Trusted Publisher first and falls back to NODE_AUTH_TOKEN.
-      - if: steps.check.outputs.publish == 'true'
+      - if: steps.check.outputs.npm == 'true'
         run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # --- Official MCP Registry (only when a new npm version was just published) ---
-      # The registry validates that the published npm package carries a matching
-      # top-level "mcpName", so this must run AFTER npm publish.
+      # --- Official MCP Registry ---
+      # The registry validates the version against npm (and the package's
+      # top-level "mcpName"), and a fresh npm version can take minutes to become
+      # visible. Wait for it first, or the registry answers 400.
+      - name: Wait until the version is visible on npm
+        if: steps.check.outputs.mcp == 'true'
+        run: |
+          for i in $(seq 1 40); do
+            if npm view "$PKG" version --prefer-online >/dev/null 2>&1; then
+              echo "$PKG is visible on npm"
+              exit 0
+            fi
+            echo "waiting for $PKG on npm ($i/40)"
+            sleep 15
+          done
+          echo "$PKG did not appear on npm within 10 minutes" >&2
+          exit 1
+        env:
+          PKG: ${{ steps.check.outputs.name }}@${{ steps.check.outputs.version }}
+
       - name: Install mcp-publisher
-        if: steps.check.outputs.publish == 'true'
+        if: steps.check.outputs.mcp == 'true'
         run: |
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" \
             | tar -xz mcp-publisher
@@ -79,12 +111,12 @@ jobs:
 
       # Keep server.json in sync with package.json so the two versions can't drift.
       - name: Stamp server.json version from package.json
-        if: steps.check.outputs.publish == 'true'
+        if: steps.check.outputs.mcp == 'true'
         run: |
           node -e "const fs=require('fs');const v=require('./package.json').version;const s=require('./server.json');s.version=v;s.packages[0].version=v;fs.writeFileSync('server.json',JSON.stringify(s,null,2)+'\n')"
 
       - name: Publish to MCP Registry
-        if: steps.check.outputs.publish == 'true'
+        if: steps.check.outputs.mcp == 'true'
         run: |
           mcp-publisher login github-oidc
           mcp-publisher publish
