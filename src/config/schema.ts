@@ -54,15 +54,59 @@ const sshTunnelOptionsSchema = z
   })
   .strict();
 
+/** One value or a list of alternatives (OR within a criterion, AND across criteria). */
+const oneOrMany = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
+
+/**
+ * Finds the bastion at tunnel-open time instead of pinning an instance id, so a
+ * recreated bastion is picked up without a config change. Every criterion maps
+ * to an `ec2 describe-instances` filter; only `running` instances qualify.
+ */
+export const ssmDiscoverSchema = z
+  .object({
+    /** Instance tags: { "Name": "bastion", "team": ["a", "b"] }. EC2 wildcards (*, ?) work. */
+    tags: z.record(oneOrMany).default({}),
+    vpc_id: oneOrMany.optional(),
+    subnet_id: oneOrMany.optional(),
+    security_group_id: oneOrMany.optional(),
+    /** Raw EC2 filters, e.g. { "instance-type": "t3a.micro", "iam-instance-profile.arn": "arn:..." }. */
+    filters: z.record(oneOrMany).default({}),
+    /** Keep only instances whose SSM agent reports PingStatus=Online. */
+    require_ssm_online: z.boolean().default(true),
+    /** Several matches: newest/oldest by launch time, or "single" = fail unless exactly one. */
+    pick: z.enum(['newest', 'oldest', 'single']).default('newest'),
+    /** How long a resolved instance id is reused; 0 = look up on every tunnel open. */
+    cache_ttl_ms: z.number().int().min(0).max(86_400_000).default(300_000),
+  })
+  .strict()
+  .refine(
+    (d) =>
+      Object.keys(d.tags).length > 0 ||
+      Object.keys(d.filters).length > 0 ||
+      d.vpc_id !== undefined ||
+      d.subnet_id !== undefined ||
+      d.security_group_id !== undefined,
+    { message: 'discover needs at least one criterion (tags, vpc_id, subnet_id, security_group_id or filters)' },
+  );
+
 const ssmTunnelOptionsSchema = z
   .object({
-    /** AWS instance ID of the bastion, e.g. i-0123456789abcdef0. */
-    target: z.string().min(1),
+    /** AWS instance ID of the bastion, e.g. i-0123456789abcdef0. Tried first when set. */
+    target: z.string().min(1).optional(),
+    /**
+     * Look the bastion up by tags/VPC/... Without `target` it is the only
+     * source; with `target` it is the fallback when that instance is gone or
+     * the tunnel to it fails.
+     */
+    discover: ssmDiscoverSchema.optional(),
     region: z.string().optional(),
     profile: z.string().optional(),
     document_name: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .refine((o) => o.target !== undefined || o.discover !== undefined, {
+    message: 'ssm tunnel needs "target" (instance id), "discover" (tag/VPC lookup), or both',
+  });
 
 /**
  * AWS SSO bootstrap: verified (sts get-caller-identity) before the tunnel
@@ -90,6 +134,8 @@ export const tunnelSchema = z.discriminatedUnion('type', [
 ]);
 
 export type SsoSettings = z.infer<typeof ssoSchema>;
+export type SsmDiscoverSettings = z.infer<typeof ssmDiscoverSchema>;
+export type SsmTunnelOptions = z.infer<typeof ssmTunnelOptionsSchema>;
 
 const tunnelRefSchema = z
   .object({

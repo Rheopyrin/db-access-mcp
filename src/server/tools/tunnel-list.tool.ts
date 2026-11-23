@@ -26,6 +26,7 @@ export class TunnelListTool implements McpTool {
           tunnel_id: t.id,
           tunnel: t.tunnelName,
           type: t.tunnelType,
+          ...(t.target ? { target: t.target } : {}),
           host: t.localHost,
           port: t.localPort,
           remote_host: t.remote.host,

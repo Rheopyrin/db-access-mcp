@@ -5,6 +5,8 @@ export interface TunnelHandle {
   readonly localPort: number;
   /** External PIDs to record for orphan cleanup ([] for in-process tunnels). */
   readonly externalPids: number[];
+  /** Where the tunnel actually goes (e.g. the resolved bastion instance id); informational. */
+  readonly target?: string;
   isHealthy(): Promise<boolean>;
   close(): Promise<void>;
 }

@@ -58,6 +58,27 @@ export const EXAMPLE_CONFIG = {
         timeout_ms: 300000,
       },
     },
+    // Bastion that gets recreated: found by tags/VPC on every tunnel open
+    // (cached for cache_ttl_ms). With "target" set as well, the pinned id is
+    // tried first and "discover" is the fallback.
+    'bastion-ssm-discover': {
+      type: 'ssm',
+      options: {
+        region: 'us-east-1',
+        profile: 'default',
+        discover: {
+          tags: { Name: 'my-bastion', team: 'platform' },
+          vpc_id: 'vpc-0123456789abcdef0',
+          require_ssm_online: true,
+          pick: 'newest',
+          cache_ttl_ms: 300000,
+        },
+      },
+      sso: {
+        session: 'my-sso-session',
+        profile: 'default',
+      },
+    },
     'bastion-ssh': {
       type: 'ssh',
       options: {

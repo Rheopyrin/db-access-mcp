@@ -5,15 +5,10 @@ import { DbAccessError } from '../errors';
 import type { Logger } from '../interfaces/logger';
 import type { TunnelHandle, TunnelOpenRequest, TunnelProvider } from '../interfaces/tunnel-provider';
 import { getPlatform } from '../platform/platform';
+import type { SsmTunnelOptions } from '../config/schema';
+import { SsmTargetResolver } from './ssm-target-resolver';
 import type { SsoSessionManager } from './sso-session';
 import { tcpProbe, waitForTcp } from './tcp';
-
-interface SsmOptions {
-  target: string;
-  region?: string;
-  profile?: string;
-  document_name?: string;
-}
 
 const DEFAULT_DOCUMENT = 'AWS-StartPortForwardingSessionToRemoteHost';
 
@@ -36,6 +31,7 @@ class SsmTunnelHandle implements TunnelHandle {
 
   constructor(
     readonly localPort: number,
+    readonly target: string,
     private readonly watchdog: ChildProcess,
     private readonly childPid: number,
     private readonly logger: Logger,
@@ -89,13 +85,18 @@ class SsmTunnelHandle implements TunnelHandle {
 export class SsmTunnelProvider implements TunnelProvider {
   readonly type = 'ssm';
 
+  private readonly resolver: SsmTargetResolver;
+
   constructor(
     private readonly logger: Logger,
     private readonly ssoSessions?: SsoSessionManager,
-  ) {}
+    resolver?: SsmTargetResolver,
+  ) {
+    this.resolver = resolver ?? new SsmTargetResolver(logger);
+  }
 
   async open(req: TunnelOpenRequest): Promise<TunnelHandle> {
-    const options = req.config.options as SsmOptions;
+    const options = req.config.options as SsmTunnelOptions;
     const logger = this.logger.child({ tunnel: req.name });
 
     // SSO bootstrap: verify (and if needed establish) the session BEFORE
@@ -108,11 +109,54 @@ export class SsmTunnelProvider implements TunnelProvider {
         timeoutMs: sso.timeout_ms,
       });
     }
+    const discover = options.discover;
+    if (!discover) {
+      return this.openTarget(req, options, options.target!, logger);
+    }
+
+    // Which instance to try first:
+    // - target + discover: the pinned target, unless an earlier fallback left a
+    //   still-valid discovered id in the cache (the pinned one already failed);
+    // - discover only: the (cached or freshly) discovered instance.
+    const ctx = { region: options.region, profile: options.profile };
+    const first = options.target
+      ? (this.resolver.peek(req.name, discover, ctx)?.instanceId ?? options.target)
+      : (await this.resolver.resolve(req.name, discover, ctx)).instanceId;
+
+    try {
+      return await this.openTarget(req, options, first, logger);
+    } catch (err) {
+      // The bastion may have been recreated: drop the cache, look again and
+      // retry once when the lookup points somewhere else.
+      this.resolver.invalidate(req.name);
+      let fresh;
+      try {
+        fresh = await this.resolver.resolve(req.name, discover, ctx, { fresh: true });
+      } catch (lookupErr) {
+        logger.warn('ssm bastion fallback lookup failed', { failedTarget: first, err: lookupErr });
+        throw err;
+      }
+      if (fresh.instanceId === first) throw err;
+      logger.warn('ssm tunnel failed on the current bastion; retrying on the discovered instance', {
+        failedTarget: first,
+        discovered: fresh.instanceId,
+        pinnedTarget: options.target,
+      });
+      return this.openTarget(req, options, fresh.instanceId, logger);
+    }
+  }
+
+  private async openTarget(
+    req: TunnelOpenRequest,
+    options: SsmTunnelOptions,
+    target: string,
+    logger: Logger,
+  ): Promise<TunnelHandle> {
     const awsArgs = [
       'ssm',
       'start-session',
       '--target',
-      options.target,
+      target,
       '--document-name',
       options.document_name ?? DEFAULT_DOCUMENT,
       '--parameters',
@@ -128,7 +172,7 @@ export class SsmTunnelProvider implements TunnelProvider {
     let lastError: DbAccessError | undefined;
     for (const awsCmd of getPlatform().awsCommandCandidates()) {
       try {
-        return await this.openWithCommand(req, awsCmd, awsArgs, logger);
+        return await this.openWithCommand(req, target, awsCmd, awsArgs, logger);
       } catch (err) {
         lastError = err as DbAccessError;
         if (!/failed to spawn|ENOENT/.test(lastError.message)) throw lastError;
@@ -144,6 +188,7 @@ export class SsmTunnelProvider implements TunnelProvider {
 
   private async openWithCommand(
     req: TunnelOpenRequest,
+    target: string,
     awsCmd: string,
     awsArgs: string[],
     logger: Logger,
@@ -189,11 +234,11 @@ export class SsmTunnelProvider implements TunnelProvider {
     logger.info('ssm tunnel opened', {
       localPort: req.localPort,
       remote: `${req.remote.host}:${req.remote.port}`,
-      target: (req.config.options as SsmOptions).target,
+      target,
       watchdogPid: watchdog.pid,
       childPid,
     });
-    return new SsmTunnelHandle(req.localPort, watchdog, childPid, logger);
+    return new SsmTunnelHandle(req.localPort, target, watchdog, childPid, logger);
   }
 
   /** First stdout line of the watchdog is {"childPid": N}. */

@@ -522,6 +522,7 @@ config key under `secrets` and the placeholder namespace.
 ```jsonc
 "tunnels": {
   "bastion-ssm": { "type": "ssm", "options": { "target": "i-0123...", "region": "us-east-1", "profile": "default" } },
+  "bastion-found": { "type": "ssm", "options": { "discover": { "tags": { "Name": "bastion" }, "vpc_id": "vpc-0123..." }, "region": "us-east-1", "profile": "default" } },
   "bastion-ssh": { "type": "ssh", "options": { "host": "bastion", "port": 22, "username": "ec2-user", "privateKey": "~/.ssh/id_ed25519" } }
 }
 ```
@@ -545,7 +546,61 @@ config key under `secrets` and the placeholder namespace.
   the whole aws/session-manager-plugin tree (`taskkill /T /F` on Windows, process
   group kill on POSIX). Requires the AWS CLI and
   [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
-  on PATH. Options: `target` (instance id), `region`, `profile`, `document_name`.
+  on PATH. Options: `target` (instance id), `discover` (find the bastion by
+  tags/VPC, see below), `region`, `profile`, `document_name`. At least one of
+  `target` and `discover` is required.
+
+### Bastion discovery (ssm tunnels)
+
+When bastions are recreated, their instance ids change. Instead of (or in
+addition to) `target`, describe the bastion with `discover`. It is found at
+tunnel-open time:
+
+```jsonc
+"bastion-rtb": {
+  "type": "ssm",
+  "options": {
+    "region": "us-east-1",
+    "profile": "prod",
+    "discover": {
+      "tags": { "Name": "devops-brothers-rtb", "team": "brothers" },
+      "vpc_id": "vpc-21784959"
+    }
+  },
+  "sso": { "session": "my-sso", "profile": "prod" }
+}
+```
+
+| `discover` field | Meaning |
+|---|---|
+| `tags` | `{ "<tag key>": "<value>" \| ["<v1>", "<v2>"] }`; EC2 wildcards `*` and `?` work |
+| `vpc_id`, `subnet_id`, `security_group_id` | one id or a list of ids |
+| `filters` | raw `ec2 describe-instances` filters, e.g. `{ "instance-type": "t3a.micro" }` |
+| `require_ssm_online` | default `true`: keep only instances whose SSM agent is `Online` |
+| `pick` | `newest` (default), `oldest`, or `single` (fail when more than one matches) |
+| `cache_ttl_ms` | default `300000`; how long a found id is reused, `0` = look up on every open |
+
+Values in a list are OR-ed; different fields are AND-ed. At least one criterion
+is required. Only `running` instances are considered.
+
+How the instance is chosen:
+
+- **`target` only**: the pinned id, as before.
+- **`discover` only**: `aws ec2 describe-instances` with the filters, then
+  `aws ssm describe-instance-information` (when `require_ssm_online`), then
+  `pick`. If the tunnel fails on the found instance, the cache is dropped, the
+  lookup runs again and, when it finds another instance, the open is retried
+  once on it.
+- **`target` + `discover`**: the pinned `target` is tried first. If it fails
+  (the instance is gone, the agent is offline), the bastion is looked up with
+  `discover` and the open is retried on the found instance. While that lookup
+  is cached (`cache_ttl_ms`), later opens go straight to the found instance.
+
+The lookup runs after the SSO bootstrap, with the tunnel's `region` and
+`profile`, through fixed-argument aws CLI calls. The profile needs
+`ec2:DescribeInstances` and, with `require_ssm_online`,
+`ssm:DescribeInstanceInformation`. The chosen instance is logged and shown as
+`target` in `tunnel_list`.
 
 ### AWS SSO bootstrap (ssm tunnels)
 

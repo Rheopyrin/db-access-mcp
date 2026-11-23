@@ -50,6 +50,8 @@ export interface ActiveTunnelInfo {
   /** up_tunnel pins (connection keys, pin: prefix stripped). */
   pins: string[];
   externalPids: number[];
+  /** Resolved bastion (ssm instance id), when the provider reports one. */
+  target?: string;
 }
 
 function newTunnelId(): string {
@@ -154,6 +156,7 @@ export class TunnelManager implements ConnectionTunnels {
         connections: [...entry.refs].filter((ref) => !ref.startsWith(PIN_PREFIX)),
         pins: [...entry.refs].filter((ref) => ref.startsWith(PIN_PREFIX)).map((ref) => ref.slice(PIN_PREFIX.length)),
         externalPids: entry.handle.externalPids,
+        target: entry.handle.target,
       })),
     );
   }
